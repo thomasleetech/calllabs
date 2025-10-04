@@ -3,6 +3,13 @@ import { db } from '@/lib/db';
 import { extractOutcome } from '@/lib/anthropic';
 import { sendSMS } from '@/lib/twilio';
 
+// Disable body parsing for Twilio webhooks
+export const runtime = 'nodejs';
+
+export async function GET(req: NextRequest) {
+  return NextResponse.json({ status: 'webhook ready' });
+}
+
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
@@ -10,6 +17,8 @@ export async function POST(req: NextRequest) {
     const callStatus = formData.get('CallStatus') as string;
     const recordingUrl = formData.get('RecordingUrl') as string;
     const duration = formData.get('CallDuration') as string;
+    
+    console.log('Webhook received:', { callSid, callStatus });
     
     const [calls]: any = await db.query(
       `SELECT c.*, t.*, u.phone, u.id as user_id 
@@ -21,6 +30,7 @@ export async function POST(req: NextRequest) {
     );
     
     if (calls.length === 0) {
+      console.log('Call not found:', callSid);
       return NextResponse.json({ error: 'Call not found' }, { status: 404 });
     }
     
@@ -57,7 +67,9 @@ export async function POST(req: NextRequest) {
       );
       
       if (call.phone) {
-        const taskDetails = JSON.parse(call.task_details);
+        const taskDetails = typeof call.task_details === 'string' 
+          ? JSON.parse(call.task_details) 
+          : call.task_details;
         const message = outcome.success
           ? `✓ ${taskDetails.company} canceled. ${outcome.notes}`
           : `Call completed but needs review.`;
